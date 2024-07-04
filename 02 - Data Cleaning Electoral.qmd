@@ -1,0 +1,143 @@
+---
+title: "02 - Data Cleaning Electoral"
+author: "tartagalensis"
+format: html
+editor: visual
+---
+
+## Objetivo del trabajo
+
+Este documento posee el objetivo de limpiar la base de datos de los resultados electorales provisorios de las elecciones generales a diputado nacional en la provincia de Buenos Aires entre 2011 y 2021
+
+```{r, message=FALSE}
+library(tidyverse)
+library(janitor)
+```
+
+### Calcular votos positivos y participación electoral
+
+```{r}
+
+votos_positivos <- read_csv("DipNacPBAxcircuito_2011-21.csv") %>% 
+  group_by(id_eleccion, name_prov, codprov, codprov_censo, nomdepto, coddepto, coddepto_censo,
+           DPTO, circuito, electores, blancos, nulos) %>% 
+  summarize(votos_positivos = sum(votos_partido_politico)) %>% 
+  ungroup() %>% 
+  mutate(participacion = round((votos_positivos + blancos + nulos)/electores * 100, digits = 2)) %>% 
+  select(id_eleccion, name_prov, codprov, codprov_censo, nomdepto, coddepto, coddepto_censo,
+           DPTO, circuito, votos_positivos, participacion) 
+
+```
+
+```{r}
+
+df_madre <- read_csv("DipNacPBAxcircuito_2011-21.csv")
+
+df_madre %>% select(id_eleccion, DPTO, circuito, electores) %>% 
+  unique()
+
+#df_madre %>% left_join(votos_positivos) %>%  filter(electores > 2500,participacion > 50) 
+```
+
+```{r}
+df_madre %>% select(id_eleccion, DPTO, circuito, electores) %>% 
+  unique()
+```
+
+```{r}
+electores_totales <- df_madre %>%
+  select(id_eleccion, DPTO, circuito, electores) %>% 
+  unique() %>% 
+  group_by(id_eleccion) %>%
+  summarise(circuitos = count(circuito))
+  summarise(electores_totales = sum(electores)) %>%
+  ungroup() %>% 
+  print()
+
+
+share_mesas <- df_madre %>%
+  select(id_eleccion, DPTO, circuito, electores) %>% 
+  unique() %>% 
+  group_by(id_eleccion) %>%
+  summarise(porcentaje_500 = mean(electores > 500) * 100,
+            porcentaje_1500 = mean(electores > 1500) * 100,
+            porcentaje_2500 = mean(electores > 2500) * 100,
+            porcentaje_3000 = mean(electores > 3000) * 100,
+            porcentaje_5000 = mean(electores > 5000) * 100,
+            porcentaje_10000 = mean(electores > 10000) * 100) %>% 
+  print()
+ 
+ele_500 <- df_madre %>%
+  select(id_eleccion, DPTO, circuito, electores) %>% 
+  unique() %>% 
+  filter(electores > 500) %>% 
+  group_by(id_eleccion) %>% 
+  summarise(electores_500 = sum(electores)) %>%
+  ungroup() %>%
+  print()
+  
+ele_1500 <- df_madre %>%
+  select(id_eleccion, DPTO, circuito, electores) %>% 
+  unique() %>% 
+  filter(electores > 1500) %>% 
+  group_by(id_eleccion) %>% 
+  summarise(electores_1500 = sum(electores)) %>%
+      ungroup() %>% 
+  print()
+  
+ele_2500 <- df_madre %>%
+  select(id_eleccion, DPTO, circuito, electores) %>% 
+  unique() %>% 
+  filter(electores > 2500) %>% 
+  group_by(id_eleccion) %>% 
+  summarise(electores_2500 = sum(electores)) %>%
+    ungroup() %>% 
+  print()
+  
+ele_3000 <-df_madre %>%
+  select(id_eleccion, DPTO, circuito, electores) %>% 
+  unique() %>% 
+  filter(electores > 3000) %>% 
+  group_by(id_eleccion) %>% 
+  summarise(electores_3000 = sum(electores)) %>%
+  ungroup() %>% 
+  print()
+  
+ele_5000 <- df_madre %>%
+  select(id_eleccion, DPTO, circuito, electores) %>% 
+  unique() %>% 
+  filter(electores > 5000) %>% 
+  group_by(id_eleccion) %>% 
+  summarise(electores_5000 = sum(electores)) %>%
+  ungroup() %>% 
+  print()
+
+ele_10000 <- df_madre %>%
+  select(id_eleccion, DPTO, circuito, electores) %>% 
+  unique() %>% 
+  filter(electores > 10000) %>% 
+  group_by(id_eleccion) %>% 
+  summarise(electores_10000 = sum(electores)) %>%
+  ungroup() %>% 
+  print()
+
+  
+electores_totales %>% 
+  left_join(share_mesas ) %>% 
+  left_join(ele_500) %>% 
+  left_join(ele_1500) %>% 
+  left_join(ele_2500) %>% 
+  left_join(ele_3000) %>% 
+  left_join(ele_5000) %>% 
+  left_join(ele_10000) 
+
+
+#Si trabajamos con 500, 1500, 2500, 3000, 5000 y 10.000 electores agarramos el % del universo
+round(12475894/12530612*100,2)
+round(12372598/12530612*100,2)
+round(12229855/12530612*100,2)
+round(12166381/12530612*100,2)
+round(11937770/12530612*100,2)
+round(11199614/12530612*100,2)
+
+```

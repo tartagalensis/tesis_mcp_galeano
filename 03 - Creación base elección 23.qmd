@@ -1,0 +1,242 @@
+---
+title: "03 - Creación base eleccion 2023"
+author: "tartagalensis"
+format: html
+
+editor: visual
+---
+
+## Objetivo del trabajo
+
+Este documento posee el objetivo de transformar los datos de las bases de las que se puede obtener potenciales variables independientes del modelo, para luego consolidarlas en un mismo documento junto a los resultados electorales provisorios de las elecciones generales a diputado nacional en la provincia de Buenos Aires en 2021.
+
+```{r, message=FALSE}
+library(tidyverse)
+library(janitor)
+```
+
+## Importar variable dependiente
+
+```{r, message=FALSE, echo=FALSE}
+
+elecciones_23 <- read_csv("DipNacPBAxcircuito_2011-23.csv") %>% 
+  filter(id_eleccion == "dip_gral2023")
+
+
+votos_positivos <- elecciones_23 %>% group_by(DPTO, circuito) %>% summarise(votos_positivos =  sum(votos_partido_politico))
+
+votos_lla <- elecciones_23 %>% 
+  filter(id_fuerza_politica == '20135') %>% 
+  left_join(votos_positivos) %>% 
+  mutate(voto_lla = round((votos_partido_politico/votos_positivos)*100, digits = 3)) %>% 
+  select(DPTO, circuito, voto_lla) 
+
+votos_jxc <- elecciones_23 %>% 
+  filter(id_fuerza_politica == '20132') %>% 
+  left_join(votos_positivos) %>% 
+  mutate(voto_jxc = round((votos_partido_politico/votos_positivos)*100, digits = 3)) %>% 
+  select(DPTO, circuito, voto_jxc) 
+
+votos_2023 <- elecciones_23 %>% 
+  filter(id_fuerza_politica == '20134') %>% 
+  left_join(votos_positivos) %>% 
+  mutate(voto_fdt = round((votos_partido_politico/votos_positivos)*100, digits = 3)) %>% 
+  select(DPTO, circuito, blancos, nulos, votos_positivos, voto_fdt, electores) %>% 
+  left_join(votos_lla) %>% 
+  left_join(votos_jxc) %>% 
+  print()
+
+```
+
+## Importar y transformar variables independientes
+
+### 1. Tasa de pobreza e indigencia
+
+```{r}
+vi_01 <- read_csv("data_socioeco/stats_circuitos/ingresos_pobreza_circuitos_2021.csv") %>% 
+  filter(NOMPROV == "Buenos Aires") %>% 
+  mutate(DPTO = as.character(DPTO),
+         Pobreza = Pobreza*100,
+         Indigencia = Indigencia*100) %>% 
+  select(region = Region, DPTO, circuito, muestra, pobreza = Pobreza, indigencia = Indigencia) %>% 
+  print()
+
+```
+
+### 2. Cortes etarios
+
+```{r}
+
+vi_02 <- read_csv("data_socioeco/stats_circuitos/Grupo_Etario_INDEC_circuitos_2021.csv") %>% 
+  filter(NOMPROV == "Buenos Aires") %>% 
+  mutate(DPTO = as.character(DPTO)) %>% 
+  rowwise() %>% 
+  mutate(poblacion = sum(`13-28`,`29-64`,`>65`, na.rm = TRUE) )%>% 
+  mutate(menor_30 = round((`13-28` / poblacion)*100,digits = 1),
+         mayor_65 = round((`>65` / poblacion)*100,digits = 1)) %>% 
+  select(DPTO, circuito, menor_30, mayor_65) %>% 
+  print()
+
+```
+
+### 3. Categoría Ocupacional
+
+```{r}
+vi_03 <-read_csv("data_socioeco/stats_circuitos/CAT_OCUP_circuitos_2021.csv") %>% 
+  filter(NOMPROV == "Buenos Aires") %>%
+  mutate(DPTO = as.character(DPTO)) %>% 
+  rowwise() %>% 
+  mutate(pop_ocup = sum(`0`, `2`,`3`, na.rm = T)) %>% 
+  select(DPTO, circuito, ocup_0 =`0`, ocup_2 =`2`, ocup_3 =`3`, pop_ocup) %>% 
+  mutate(share_ocup_0 = round((ocup_0/pop_ocup)*100, digits=2),
+         share_ocup_2 = round((ocup_2/pop_ocup)*100, digits=2),
+         share_ocup_3 = round((ocup_3/pop_ocup)*100, digits=2)) %>% 
+  select(DPTO, circuito, share_ocup_0, share_ocup_2, share_ocup_3) %>% 
+  print()
+
+# 0 = Inactivo
+# 2 = Cuentapropista
+# 3 = Empleados
+```
+
+### 4. Nivel Educativo
+
+```{r}
+vi_04 <- read_csv("data_socioeco/stats_circuitos/P0910_circuitos_2021.csv") %>% 
+  filter(NOMPROV == "Buenos Aires") %>% 
+  mutate(DPTO = as.character(DPTO)) %>% 
+  rowwise() %>% 
+  mutate(pop_educ = sum(`2`, `12`,`20` ,`21` , `30` , `31` ,`40` ,`41` ,`60`,`61`,`70`,`71`,`80`,`81`,`92`,na.rm=TRUE)) %>% 
+  mutate(pop_prim_com = sum(`20`, `30` , `31` ,`40` ,`41` ,`60`,`61`,`70`,`71`,`80`,`81`,na.rm=TRUE),
+         pop_sec_com = sum(`30`,`40`,`60`,`61`,`70`,`71`,`80`,`81`,na.rm=TRUE),
+         pop_uni_com = sum(`60`,`70`,`80`,`81`,na.rm=TRUE)) %>% 
+  mutate(share_ed_sec =  round((pop_sec_com/pop_educ)*100,2), 
+         share_ed_prim = round((pop_prim_com/pop_educ)*100,2),
+         share_ed_uni = round((pop_uni_com/pop_educ)*100,2)) %>% 
+  select(DPTO, circuito,share_ed_sec,share_ed_prim,share_ed_uni) %>% 
+  print()
+```
+
+### 5. Población Urbana
+
+```{r}
+vi_05 <- read_csv("data_socioeco/stats_circuitos/URP_circuitos_2021.csv") %>% 
+  filter(NOMPROV == "Buenos Aires") %>% 
+  mutate(DPTO = as.character(DPTO)) %>% 
+  rowwise() %>% 
+  mutate(pop_tot = sum(`1`, `2`,`3`,na.rm=TRUE)) %>% 
+  mutate(share_pop_urb = round((`1`/pop_tot)*100,2))%>% 
+  select(DPTO, circuito,share_pop_urb) %>% 
+  print()
+
+
+```
+
+### 6. Control político
+
+```{r}
+vi_06 <-read_csv("data_politica/Intendentes PBA 2019 - 2023.csv") %>% 
+  mutate(codprov_censo = str_pad(codprov_censo, 1, side = "left", pad = "0"), 
+         coddepto_censo = str_pad(coddepto_censo, 3, side = "left", pad = "0")) %>% 
+  mutate(DPTO = str_c(codprov_censo,coddepto_censo)) %>% 
+  mutate(dummy_fdt = if_else(partido == 'FdT', 1, 0),
+         dummy_jxc = if_else(partido == 'JxC', 1, 0)) %>% 
+  select(DPTO, dummy_fdt, dummy_jxc)
+```
+
+### 7. Variación tasa de pobreza
+
+```{r}
+past_year <- read_csv("data_socioeco/stats_circuitos/ingresos_pobreza_circuitos_2019.csv") %>% 
+  filter(NOMPROV == "Buenos Aires") %>% 
+  mutate(DPTO = as.character(DPTO)) %>% 
+  select(region = Region, DPTO, circuito, pobreza_anterior = Pobreza) %>% 
+  print()
+
+vi_07 <- vi_01 %>% left_join(past_year) %>% 
+  mutate(var_pobreza = round((pobreza-pobreza_anterior),2))%>% 
+  select(region, DPTO, circuito, var_pobreza) %>% 
+  print()
+```
+
+### 8. Informalidad laboral
+
+```{r}
+
+vi_08 <- read_csv("data_socioeco/stats_circuitos/PP07K_circuitos_2021.csv") %>% 
+  filter(NOMPROV == "Buenos Aires") %>% 
+  mutate(DPTO = as.character(DPTO),
+         total_trabajadores = `0.0` + `1.0`+ `4.0`) %>% 
+  mutate(share_informal = round(((`1.0`+`4.0`)/total_trabajadores)*100,2)) %>% 
+  select(region = Region, DPTO, circuito, share_informal) %>% 
+  print()
+
+
+```
+
+## Join tablas
+
+```{r}
+base_fdt_v01 <- votos_2023 %>% 
+  mutate(DPTO = str_sub(DPTO,start=2)) %>% 
+  left_join(vi_01) %>% 
+  left_join(vi_02) %>% 
+  left_join(vi_03) %>% 
+  left_join(vi_04) %>% 
+  left_join(vi_05) %>% 
+  left_join(vi_06) %>% 
+  left_join(vi_07) %>%
+  left_join(vi_08) %>% 
+  select(DPTO, circuito, voto_fdt, electores, everything()) %>% 
+  filter(electores > 3000) %>% 
+  print()
+```
+
+```{r}
+
+modelo <- glm(voto_fdt ~  pobreza + indigencia + share_ed_uni + mayor_65 + share_ocup_3 +  share_informal + 
+      dummy_fdt +  log(electores) ,data = base_fdt_v01)
+summary(modelo)
+
+with(summary(modelo), 1 - deviance/null.deviance)
+
+
+```
+
+```{r}
+modelo <- glm(voto_lla ~  pobreza + indigencia + share_ed_uni + mayor_65 + share_ocup_3 +  share_informal + 
+      dummy_fdt +  log(electores) ,data = base_fdt_v01)
+summary(modelo)
+
+with(summary(modelo), 1 - deviance/null.deviance)
+```
+
+```{r}
+modelo <- glm(voto_jxc ~  pobreza + indigencia + share_ed_uni + mayor_65 + share_ocup_3 +  share_informal + 
+      dummy_fdt +  log(electores) ,data = base_fdt_v01)
+summary(modelo)
+
+with(summary(modelo), 1 - deviance/null.deviance)
+```
+
+```{r}
+# Reestructurar los datos para facilitar el gráfico
+datos_long <- base_fdt_v01 %>%
+  select(voto_fdt, voto_jxc, voto_lla, pobreza) %>% 
+  gather(key = "partido", value = "votos", voto_fdt, voto_jxc, voto_lla)
+
+# Crear los gráficos
+# Definir colores para cada partido
+colores_partidos <- c("voto_fdt" = "lightblue", "voto_jxc" = "gold", "voto_lla" = "purple")
+
+# Crear los gráficos
+mi_grafico <- ggplot(datos_long, aes(x = pobreza, y = votos, color = partido)) + 
+  geom_point() +  # Añadir puntos
+  geom_smooth(method = "lm", se = FALSE) +  # Añadir línea de regresión lineal
+  facet_wrap(~partido, scales = "fixed") +  # Escala fija en el eje Y
+  scale_color_manual(values = colores_partidos) +  # Asignar colores
+  theme_minimal() 
+
+
+ggsave("plots/voto_pobreza_2023.png", mi_grafico, width = 10, height = 6, dpi = 300)
+```

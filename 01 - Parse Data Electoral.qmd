@@ -1,0 +1,204 @@
+---
+title: "01 - Parseo Data Electoral"
+author: "tartagalensis"
+format: html
+editor: visual
+---
+
+## Objetivo del trabajo
+
+Este documento posee el objetivo de ordenar los datos de los resultados electorales nacionales de 2011 en adelante para la provincia de Buenos Aires.
+
+### Data Mati Iglesias (2011-2019)
+
+```{r,echo: false, message=FALSE}
+
+library(tidyverse)
+
+# Define la ruta de la carpeta "listas" (asegúrate de que la ruta sea correcta)
+ruta_carpeta <- "data_electoral/listas/"
+
+# Crea una lista vacía para almacenar los dataframes de cada archivo CSV
+dataframes <- list()
+
+# Itera sobre los archivos en la carpeta "listas" y carga cada archivo CSV en un dataframe individual
+for (archivo in list.files(ruta_carpeta, pattern = ".csv", full.names = TRUE)) {
+  df <- read_csv(archivo)
+  df <- df %>% mutate(nombre_archivo = basename(archivo))  # Añade una columna para identificar el archivo
+  dataframes <- c(dataframes, list(df))
+}
+
+# Combina todos los dataframes en uno solo
+listas_pba <- bind_rows(dataframes) %>% 
+  filter(vot_proCodigoProvincia == "02") %>% 
+  mutate(nombre_archivo = gsub("listas_", "", nombre_archivo)) %>%
+  mutate(nombre_archivo = gsub(".csv", "", nombre_archivo)) 
+
+```
+
+```{r,echo: false, message=FALSE}
+
+# Cargar las librerías necesarias
+library(tidyverse)
+
+# Obtener la lista de archivos csv en la carpeta "escrutinios"
+archivos <- list.files("data_electoral/escrutinios", pattern = ".csv", full.names = TRUE)
+
+# Crear una función para procesar cada archivo
+procesar_archivo <- function(archivo) {
+  datos <- read_csv(archivo)  # Leer el archivo csv
+  
+  # Obtener las columnas relevantes
+  columnas_relevantes <- c("codprov", "coddepto", "depto", "circuito", "mesa", "electores", "blancos", "nulos")
+  
+  # Obtener el nombre del archivo sin la extensión
+  nombre_archivo <- basename(archivo) %>%
+    tools::file_path_sans_ext()
+  
+  # Calcular los totales por circuito (electores, blancos y nulos)
+  datos_agregados <- datos %>%
+    group_by(codprov, coddepto, circuito) %>%
+    summarize(electores = sum(electores),
+              blancos = sum(blancos),
+              nulos = sum(nulos)) %>%
+    mutate(nombre_archivo = nombre_archivo)
+  
+  # Hacer pivot_longer en las columnas restantes
+  datos_long <- datos %>%
+    pivot_longer(cols = -all_of(columnas_relevantes),
+                 names_to = "id_fuerza_politica",
+                 values_to = "votos_partido_politico")
+  
+  # Calcular los votos por partido político
+  votos_partido_politico <- datos_long %>%
+    mutate(nombre_archivo = nombre_archivo)%>%
+    group_by(codprov, coddepto, circuito, id_fuerza_politica,nombre_archivo) %>%
+    summarize(votos_partido_politico = sum(votos_partido_politico))
+  
+  return(list(datos_agregados = datos_agregados, votos_partido_politico = votos_partido_politico))
+}
+
+# Aplicar la función a cada archivo y combinar los resultados en una lista de dataframes
+datos_lista <- map(archivos, procesar_archivo)
+
+# Unir los datos de los circuitos en un solo dataframe
+datos_agregados <- bind_rows(map(datos_lista, "datos_agregados")) %>% 
+    mutate(nombre_archivo = gsub("pba_", "", nombre_archivo)) 
+
+
+# Obtener los datos de los votos por fuerza política en una lista de dataframes
+votos_partido_politico <- bind_rows(map(datos_lista, "votos_partido_politico")) %>% 
+      mutate(nombre_archivo = gsub("pba_", "", nombre_archivo)) 
+
+```
+
+```{r}
+
+
+
+listas_corregido <-  listas_pba %>% select(id_fuerza_politica = vot_parCodigo,
+                      nombre_frente = parDenominacion,
+                      nombre_archivo)
+
+
+base_2011_2019_consol <- votos_partido_politico %>% ungroup() %>% 
+  left_join(listas_corregido) %>% 
+  left_join(datos_agregados)
+
+
+
+```
+
+### Eleccion 2021
+
+```{r}
+dipnac_pba21 <- read_csv("data_electoral/crudos_dine/2021/GRALES/ResultadosElectorales.csv",
+          locale=locale(encoding="latin1")) %>% 
+  janitor::clean_names() %>% 
+  filter(distrito_id == 2) %>% 
+  filter(cargo_id == 3) %>% 
+  select(distrito_id, seccion_id, circuito_id, mesa_id, mesa_electores, agrupacion_id, agrupacion_nombre, lista_numero, lista_nombre, votos_tipo, votos_cantidad) 
+
+#Separo nulos y blancos para agruparlos x circuito
+blancos_nulos_pba21 <- dipnac_pba21 %>% filter(votos_tipo %in% c("BLANCOS", "NULOS")) %>% 
+  group_by(distrito_id, seccion_id, circuito_id, votos_tipo) %>% 
+   summarize(votos_cantidad = sum(votos_cantidad)) %>% 
+  ungroup()
+
+#Filtro x votos en Blanco x circuito
+blancos_pba21 <- blancos_nulos_pba21 %>% 
+  filter(votos_tipo == "BLANCOS") %>% 
+  select(distrito_id, seccion_id, circuito_id, blancos = votos_cantidad)  
+
+#Filtro x votos Nulos x circuito
+nulos_pba21 <- blancos_nulos_pba21 %>% 
+  filter(votos_tipo == "NULOS") %>% 
+  select(distrito_id, seccion_id, circuito_id, nulos = votos_cantidad)
+
+
+#Calculo n electores x circuito
+electores_pba21 <- dipnac_pba21 %>% filter(votos_tipo == "BLANCOS") %>% 
+  group_by(distrito_id, seccion_id, circuito_id) %>% 
+  summarize(electores = sum(mesa_electores)) %>% 
+  ungroup() 
+
+#Calculo votos positivos x fza pol x circuito
+votos_dipnac_pba21 <- dipnac_pba21 %>% 
+  filter(votos_tipo == "POSITIVO") %>% 
+  group_by(distrito_id, seccion_id, circuito_id, id_fuerza_politica = agrupacion_id, nombre_frente = agrupacion_nombre) %>% 
+  summarize(votos_partido_politico = sum(votos_cantidad)) %>% 
+  ungroup()
+
+
+```
+
+Consolido data electoral dipnac 2021
+
+```{r}
+dipnac21 <- votos_dipnac_pba21 %>% 
+  left_join(electores_pba21) %>% 
+  left_join(blancos_pba21) %>% 
+  left_join(nulos_pba21) %>% 
+  mutate(nombre_archivo = "dip_gral2021",
+         codprov = str_pad(distrito_id,2,side="left",pad = "0"),
+         coddepto = str_pad(seccion_id,3,side="left",pad = "0"),
+         id_fuerza_politica = as.character(id_fuerza_politica)) %>% 
+  select(codprov, coddepto, circuito = circuito_id, 
+         id_fuerza_politica, nombre_archivo, votos_partido_politico, nombre_frente,
+         electores, blancos, nulos) 
+
+```
+
+### Bind elecciones
+
+```{r}
+consolidado_2011_2021 <- base_2011_2019_consol %>% 
+  bind_rows(dipnac21) 
+```
+
+### Metadata PBA
+
+```{r}
+metadata_pba <- read_csv("equivalencias_dineINDEC.csv") %>% select(codprov, coddepto, codprov_censo, coddepto_censo, nomdepto_censo, name_prov) %>% 
+  mutate(DPTO = paste0(codprov_censo ,coddepto_censo)) %>% 
+  filter(name_prov == "BUENOS AIRES")
+```
+
+### 
+
+### Join elecciones
+
+```{r}
+#base_2011_2019_consol %>% left_join(metadata_pba) %>%  colnames()
+
+
+consolidado_metadata <- consolidado_2011_2021 %>% left_join(metadata_pba) %>% 
+  select(id_eleccion = nombre_archivo, name_prov, codprov, codprov_censo, nomdepto = nomdepto_censo, coddepto, coddepto_censo, DPTO,
+         circuito, electores, blancos, nulos, nombre_frente, id_fuerza_politica, votos_partido_politico)
+```
+
+### Export final
+
+```{r}
+write_csv(consolidado_metadata, "DipNacPBAxcircuito_2011-21.csv")
+```
